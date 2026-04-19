@@ -11,6 +11,8 @@ from rich.table import Table
 from twisted.internet import task, reactor
 from rich import box
 from rich.columns import Columns
+from rich.text import Text
+
 
 import sys
 
@@ -138,6 +140,12 @@ def build_tram_table() -> Table:
             journey["destination"],
             expected,
         )
+    
+    if not tram_data:
+        def merged_row(text: str, num_columns: int, style: str = "") -> list:
+            return [Text(text, style=style, justify="center")] + [""] * (num_columns - 1)
+
+        table.add_row(*merged_row("No scheduled trams for the next 30 mins.", 3, style="rgb(255,130,0)"))
 
     return table
 
