@@ -1,150 +1,133 @@
 from download_json import download_json
-import json
-from rich.console import Console
-from rich.table import Table
-from datetime import datetime, timezone
-import pytz, os
 import math
+from datetime import datetime, timezone
+
+import pytz
+from rich.console import Console
+from rich.layout import Layout
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
 from twisted.internet import task, reactor
 
-timeout = 60.0 # Sixty seconds
-
-os.system('cls' if os.name == 'nt' else 'clear')
 console = Console()
-console.clear()
+live = Live(console=console, refresh_per_second=1, screen=True)
 
-def getTramData():
+
+# ---------------------------------------------------------------------------
+# Data fetching
+# ---------------------------------------------------------------------------
+
+def get_tram_data():
     """
-    Gets Tram data from tramlive.co.uk, takes
-    all of the relevant information and puts
-    it into a JSON variable, sorts it based 
-    on the mins to arrival, then returned
+    Fetches tram data from tramlive.co.uk for Lace Market (N22),
+    merges both directions, filters to the next 30 minutes, and
+    returns a list sorted by minutes to arrival.
     """
-    # N22 is Lace Market Tram Stops
     api_data = download_json("http://api.tramlive.co.uk/api/N22")
-    tram_data_json_list = []
+    tram_list = []
 
-    # run through stop 1
-    for tram in api_data['stops'][0]['journeys']:
-        # prepare data
+    for stop in api_data["stops"]:
+        for tram in stop["journeys"]:
+            timestamp = tram["timetabled"] / 1000
+            arrival_time = datetime.fromtimestamp(timestamp, timezone.utc)
+            mins = math.ceil((arrival_time - datetime.now(tz=timezone.utc)).total_seconds() / 60)
 
-        timestamp = tram['timetabled'] / 1000
-        arrival_time = datetime.fromtimestamp(timestamp, timezone.utc)
-        now = datetime.now(tz=timezone.utc)
-        mins_to_arrival = math.ceil((arrival_time - now).total_seconds() / 60)
+            if mins <= 30:
+                tram_list.append({
+                    "line": tram["line"],
+                    "destination": tram["destination"],
+                    "mins_to_arrival": mins,
+                })
 
-        # add to json + append to list
+    return sorted(tram_list, key=lambda t: t["mins_to_arrival"])
 
-        journey_json_data = {}
-        journey_json_data['line'] = tram['line']
-        journey_json_data['destination'] = tram['destination']
-        journey_json_data['mins_to_arrival'] = mins_to_arrival
-        tram_data_json_list.append(journey_json_data)
 
-    # run through stop 2
-    for tram in api_data['stops'][1]['journeys']:
-        # prepare data
+# ---------------------------------------------------------------------------
+# Table builders
+# ---------------------------------------------------------------------------
 
-        timestamp = tram['timetabled'] / 1000
-        arrival_time = datetime.fromtimestamp(timestamp, timezone.utc)
-        now = datetime.now(tz=timezone.utc)
-        mins_to_arrival = math.ceil((arrival_time - now).total_seconds() / 60)
+LINE_NAMES = {
+    "Line 1": "Toton Lane — Hucknall",
+    "Line 2": "Phoenix Park — Clifton",
+}
 
-        # add to json + append to list
+def build_tram_table() -> Table:
+    """Builds the main tram departures table."""
+    tram_data = get_tram_data()
+    now_str = datetime.now(tz=pytz.timezone("Europe/London")).strftime("%H:%M:%S")
 
-        journey_json_data = {}
-        journey_json_data['line'] = tram['line']
-        journey_json_data['destination'] = tram['destination']
-        journey_json_data['mins_to_arrival'] = mins_to_arrival
-        tram_data_json_list.append(journey_json_data)
-    
-    # sort the tram_data_json_list by mins to arrival
-
-    tram_data_json_list_sorted = sorted(tram_data_json_list, key=lambda t: t["mins_to_arrival"])
-
-    return tram_data_json_list_sorted
-
-def get_and_display_data():
-    data = download_json("http://api.tramlive.co.uk/api/N22")
-
-    pretty = json.dumps(data, indent=2, ensure_ascii=False)
-    #print(pretty)
-    #print(data['stops'][0]['direction']) #['city']
-
-    table = Table(show_header=True, title="Lace Market Tram Stop", header_style="bold magenta", caption="Updated at {}".format(datetime.now(tz=pytz.timezone('Europe/London')).strftime("%m/%d/%Y, %H:%M:%S")))
+    table = Table(
+        show_header=True,
+        #title="Lace Market Tram Stop",
+        header_style="bold magenta",
+        caption=f"Updated at {now_str}",
+        expand=True,
+    )
     table.add_column("Line", style="dim")
     table.add_column("Destination")
-    table.add_column("Arrival Time")
-    table.add_column("Minutes to arrival")
+    table.add_column("Expected", justify="right")
 
-    #PhoenixPark/Hucknall
-    for i in data['stops'][0]['journeys']:
-        #print("line: {}".format(i['line']))
-        #print("destination: {}".format(i['destination']))
-        #print("ETA: {}".format(i['timetabled']))
-        line = ""
-        if i['line'] == "Line 1":
-            line = "Toton Lane - Hucknall"
-        if i['line'] == "Line 2":
-            line = "Phoenix Park - Clifton"
-        timestamp = i['timetabled'] / 1000
-        #print("ETA: {}".format(datetime.fromtimestamp(timestamp, timezone.utc)))
-        arrival_time = datetime.fromtimestamp(timestamp, timezone.utc)
-        now = datetime.now(tz=timezone.utc)
-        mins_to_arrival = math.ceil((arrival_time - now).total_seconds() / 60)
+    for journey in tram_data:
+        mins = journey["mins_to_arrival"]
+        expected = "Due" if mins <= 0 else f"{mins} min"
+        table.add_row(
+            LINE_NAMES.get(journey["line"], journey["line"]),
+            journey["destination"],
+            expected,
+        )
 
-        if mins_to_arrival < 30 and mins_to_arrival != 0:
-            table.add_row(
-                line, #i['line'],
-                i['destination'],
-                datetime.fromtimestamp(timestamp, timezone.utc).astimezone(pytz.timezone('Europe/London')).strftime("%m/%d/%Y, %H:%M:%S"),
-                "{} mins".format(str(mins_to_arrival)),
-            )
-        elif mins_to_arrival == 0:
-            table.add_row(
-                line, #i['line'],
-                i['destination'],
-                datetime.fromtimestamp(timestamp, timezone.utc).astimezone(pytz.timezone('Europe/London')).strftime("%m/%d/%Y, %H:%M:%S"),
-                "Due",
-            )
+    return table
 
-    #TotonLane/CliftonSouth
-    for i in data['stops'][1]['journeys']:
-        #print("line: {}".format(i['line']))
-        #print("destination: {}".format(i['destination']))
-        #print("ETA: {}".format(i['timetabled']))
-        line = ""
-        if i['line'] == "Line 1":
-            line = "Toton Lane - Hucknall"
-        if i['line'] == "Line 2":
-            line = "Phoenix Park - Clifton"
-        timestamp = i['timetabled'] / 1000
-        #print("ETA: {}".format(datetime.fromtimestamp(timestamp, timezone.utc)))
-        arrival_time = datetime.fromtimestamp(timestamp, timezone.utc)
-        now = datetime.now(tz=timezone.utc)
-        mins_to_arrival = math.ceil((arrival_time - now).total_seconds() / 60)
 
-        if mins_to_arrival < 30 and mins_to_arrival != 0:
-            table.add_row(
-                line, #i['line'],
-                i['destination'],
-                datetime.fromtimestamp(timestamp, timezone.utc).astimezone(pytz.timezone('Europe/London')).strftime("%m/%d/%Y, %H:%M:%S"),
-                "{} mins".format(str(mins_to_arrival)),
-            )
-        elif mins_to_arrival == 0:
-            table.add_row(
-                line, #i['line'],
-                i['destination'],
-                datetime.fromtimestamp(timestamp, timezone.utc).astimezone(pytz.timezone('Europe/London')).strftime("%m/%d/%Y, %H:%M:%S"),
-                "Due",
-            )
-    console.clear()
-    console.print(table)
+def build_layout() -> Layout:
+    """
+    Builds the overall screen layout.
+    Add more sections here as needed.
+    """
+    layout = Layout()
 
-"""l = task.LoopingCall(get_and_display_data)
-l.start(timeout) # call every sixty seconds
+    # Top-level split: tram table on the left, placeholder panels on the right
+    layout.split_column(
+        Layout(name="trams", ratio=1),
+        Layout(name="buses", ratio=1),
+        Layout(name="trains", ratio=1)
+    )
 
-reactor.run()"""
+    """# Right column can be split into further sections later
+    layout["right"].split_column(
+        Layout(name="top_right"),
+        Layout(name="bottom_right"),
+    )"""
 
-data = getTramData()
-print(json.dumps(data, indent=2, ensure_ascii=False))
+    # Populate sections
+    layout["trams"].update(Panel(build_tram_table(), title="Trams", border_style="blue"))
+    layout["buses"].update(Panel("[dim]Section 2[/dim]", title="Buses", border_style="dim"))
+    layout["trains"].update(Panel("[dim]Section 3[/dim]", title="Trains", border_style="dim"))
+
+    return layout
+
+
+# ---------------------------------------------------------------------------
+# Refresh callback (called by Twisted every 60 s)
+# ---------------------------------------------------------------------------
+
+def refresh():
+    """Rebuilds the layout and pushes it to the Live display — no flicker."""
+    live.update(build_layout())
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+INTERVAL = 60.0  # seconds
+
+live.start()
+refresh()  # render immediately on launch
+
+loop = task.LoopingCall(refresh)
+loop.start(INTERVAL)
+reactor.run()
+
+live.stop()
