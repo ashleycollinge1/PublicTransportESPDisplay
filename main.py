@@ -12,6 +12,20 @@ from twisted.internet import task, reactor
 from rich import box
 from rich.columns import Columns
 
+import sys
+
+def enable_windows_ansi():
+    """Enable ANSI/VT100 Virtual Terminal Processing on Windows Command Prompt."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+        except Exception:
+            pass  # Non-fatal — worst case colours just look dim
+
+enable_windows_ansi()
+
 
 console = Console(force_terminal=True, color_system="truecolor")
 live = Live(console=console, refresh_per_second=5, screen=True)
