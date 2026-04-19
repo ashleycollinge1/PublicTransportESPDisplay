@@ -10,9 +10,11 @@ from rich.panel import Panel
 from rich.table import Table
 from twisted.internet import task, reactor
 from rich import box
+from rich.columns import Columns
 
-console = Console()
-live = Live(console=console, refresh_per_second=1, screen=True)
+
+console = Console(force_terminal=True, color_system="truecolor")
+live = Live(console=console, refresh_per_second=5, screen=True)
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +55,49 @@ LINE_NAMES = {
     "Line 2": "Phoenix Park — Clifton",
 }
 
+def build_root_train_table(train_tables) -> Table:
+    """
+    Add all of the train tables to this table
+    """
+    table = Table(
+        box=None,
+        show_header=True,
+    )
+    for train in train_tables:
+        table.add_column(train)
+
+    return table
+
+def build_train_table() -> Table:
+    """Builds individual table for each 
+    train"""
+    table = Table(
+        show_header=True,
+        box=box.SIMPLE_HEAD,
+        header_style="bold rgb(255,130,0)",
+    )
+    table.add_column("22:58", style="bold rgb(255,130,0)")
+    table.add_column("Platform 3A", style="bold rgb(255,130,0)")
+
+    table.add_row("Derby","")
+    table.add_row("Calling at", "1/1")
+    table.add_row("Derby", "22:10")
+    table.add_row("", "")
+    table.add_row("", "")
+    table.add_row("", "")
+    table.add_row("", "")
+    table.add_row("", "")
+    table.add_row("", "")
+    table.add_row("", "")
+    table.add_row("[green]On Time[/green]", "")
+    table.add_row("East Midlands Railway", "")
+
+    return table
+
+def generate_trains():
+    trains = [build_train_table() for _ in range(4)]
+    return Columns(trains, equal=True, expand=True)
+
 def build_tram_table() -> Table:
     """Builds the main tram departures table."""
     tram_data = get_tram_data()
@@ -67,9 +112,9 @@ def build_tram_table() -> Table:
         padding=0,
         box=box.SIMPLE,
     )
-    table.add_column("Line", style="dim")
-    table.add_column("Destination", style="bold green")
-    table.add_column("Expected", style="bold green", justify="right")
+    table.add_column("Line", style="rgb(255,130,0)")
+    table.add_column("Destination", style="rgb(255,130,0)")
+    table.add_column("Expected", style="rgb(255,130,0)", justify="right")
 
     for journey in tram_data:
         mins = journey["mins_to_arrival"]
@@ -92,21 +137,20 @@ def build_layout() -> Layout:
 
     # Top-level split: tram table on the left, placeholder panels on the right
     layout.split_column(
-        Layout(name="trams", ratio=1),
-        Layout(name="buses", ratio=1),
+        Layout(name="top", ratio=1),
         Layout(name="trains", ratio=1)
     )
 
-    """# Right column can be split into further sections later
-    layout["right"].split_column(
-        Layout(name="top_right"),
-        Layout(name="bottom_right"),
-    )"""
+    # Right column can be split into further sections later
+    layout["top"].split_row(
+        Layout(name="trams"),
+        Layout(name="buses"),
+    )
 
     # Populate sections
     layout["trams"].update(Panel(build_tram_table(), title="Trams", border_style="blue"))
     layout["buses"].update(Panel("[dim]Section 2[/dim]", title="Buses", border_style="dim"))
-    layout["trains"].update(Panel("[dim]Section 3[/dim]", title="Trains", border_style="dim"))
+    layout["trains"].update(Panel(generate_trains(), title="Trains", border_style="dim"))
 
     return layout
 
@@ -134,3 +178,4 @@ loop.start(INTERVAL)
 reactor.run()
 
 live.stop()
+print(console.color_system)
