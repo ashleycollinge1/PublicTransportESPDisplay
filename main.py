@@ -9,6 +9,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from twisted.internet import task, reactor
+from rich import box
 
 console = Console()
 live = Live(console=console, refresh_per_second=1, screen=True)
@@ -63,10 +64,12 @@ def build_tram_table() -> Table:
         header_style="bold magenta",
         caption=f"Updated at {now_str}",
         expand=True,
+        padding=0,
+        box=box.SIMPLE,
     )
     table.add_column("Line", style="dim")
-    table.add_column("Destination")
-    table.add_column("Expected", justify="right")
+    table.add_column("Destination", style="bold green")
+    table.add_column("Expected", style="bold green", justify="right")
 
     for journey in tram_data:
         mins = journey["mins_to_arrival"]
